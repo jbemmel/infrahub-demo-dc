@@ -293,6 +293,7 @@ class LabnetTopology(InfrahubTransform):
 
         topology: dict[str, Any] = {
             "_concept": "topology",
+            "layout": "tree",
             "name": name,
             "module": [],
             "nodes": nodes,
