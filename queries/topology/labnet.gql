@@ -21,6 +21,26 @@ query topology_labnet($name: String!) {
                   }
                 }
               }
+              device_services {
+                edges {
+                  node {
+                    __typename
+                    ... on ServiceBGP {
+                      session_type { value }
+                      local_as { node { asn { value } } }
+                      remote_as { node { asn { value } } }
+                    }
+                    ... on ServiceOSPF {
+                      router_id { node { address { value } } }
+                      area {
+                        node {
+                          area { value }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
               primary_address {
                 node {
                   address {
@@ -66,10 +86,20 @@ query topology_labnet($name: String!) {
                               }
                             }
                           }
+                          ... on ServiceOSPF {
+                            area { node { area { value } } }
+                          }
                         }
                       }
                     }
                     ... on InterfacePhysical {
+                      ip_addresses {
+                        edges {
+                          node {
+                            address { value }
+                          }
+                        }
+                      }
                       connector {
                         node {
                           connected_endpoints {
@@ -93,6 +123,15 @@ query topology_labnet($name: String!) {
                                 }
                               }
                             }
+                          }
+                        }
+                      }
+                    }
+                    ... on InterfaceVirtual {
+                      ip_addresses {
+                        edges {
+                          node {
+                            address { value }
                           }
                         }
                       }

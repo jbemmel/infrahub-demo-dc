@@ -39,24 +39,44 @@ def _device(
     *,
     primary: str | None = None,
     interfaces: list[dict] | None = None,
+    ospf: bool = False,
 ) -> dict:
-    """Build one device edge node for the transform fixture.
-
-    Args:
-        name: Device name.
-        role: Device role.
-        primary: Optional primary address string.
-        interfaces: Optional interface edge list.
-
-    Returns:
-        GraphQL-shaped device node.
-    """
+    """Build one device edge node for the transform fixture."""
+    services: list[dict] = [
+        {
+            "node": {
+                "__typename": "ServiceBGP",
+                "session_type": {"value": session_type},
+                "local_as": {"node": {"asn": {"value": local}}},
+                "remote_as": {"node": {"asn": {"value": remote}}},
+            }
+        }
+        for session_type, local, remote in [
+            ("INTERNAL", 4200000111, 4200000111),
+            (
+                "EXTERNAL",
+                4200000222 if role == "spine" else 4200000333,
+                4200000333 if role == "spine" else 4200000222,
+            ),
+        ]
+    ]
+    if ospf and primary:
+        services.append(
+            {
+                "node": {
+                    "__typename": "ServiceOSPF",
+                    "router_id": {"node": {"address": {"value": primary}}},
+                    "area": {"node": {"area": {"value": "0.0.0.0"}}},
+                }
+            }
+        )
     node: dict = {
         "name": {"value": name},
         "role": {"value": role},
         "platform": {"node": {"nornir_platform": {"value": "eos"}}},
         "interfaces": {"edges": interfaces or []},
         "primary_address": {"node": None},
+        "device_services": {"edges": services},
     }
     if primary:
         node["primary_address"] = {"node": {"address": {"value": primary}}}
@@ -69,48 +89,52 @@ def _cable_interface(
     remote_if: str,
     *,
     role: str = "leaf_spine",
+    ipv4: str | None = None,
 ) -> dict:
     """Build a physical interface edge with a cable to a remote fabric port."""
-    return {
-        "node": {
-            "name": {"value": name},
-            "role": {"value": role},
-            "interface_services": {"edges": []},
-            "connector": {
-                "node": {
-                    "connected_endpoints": {
-                        "edges": [
-                            {
-                                "node": {
-                                    "name": {"value": name},
-                                    "role": {"value": role},
-                                    "device": {"node": {"name": {"value": "ignored"}}},
-                                }
-                            },
-                            {
-                                "node": {
-                                    "name": {"value": remote_if},
-                                    "role": {"value": role},
-                                    "device": {"node": {"name": {"value": remote_device}}},
-                                }
-                            },
-                        ]
-                    }
+    node: dict = {
+        "name": {"value": name},
+        "role": {"value": role},
+        "interface_services": {"edges": []},
+        "ip_addresses": {"edges": []},
+        "connector": {
+            "node": {
+                "connected_endpoints": {
+                    "edges": [
+                        {
+                            "node": {
+                                "name": {"value": name},
+                                "role": {"value": role},
+                                "device": {"node": {"name": {"value": "ignored"}}},
+                            }
+                        },
+                        {
+                            "node": {
+                                "name": {"value": remote_if},
+                                "role": {"value": role},
+                                "device": {"node": {"name": {"value": remote_device}}},
+                            }
+                        },
+                    ]
                 }
-            },
-        }
+            }
+        },
     }
+    if ipv4:
+        node["ip_addresses"] = {"edges": [{"node": {"address": {"value": ipv4}}}]}
+    return {"node": node}
 
 
-def test_labnet_topology_emits_spines_leafs_and_links() -> None:
-    """The transform names fabric devices and deduplicates bidirectional cables."""
-    data = {
+def _dc_fixture(strategy: str) -> dict:
+    """Minimal two-leaf fabric GraphQL payload for the given strategy."""
+    ospf = strategy.startswith("ospf")
+    return {
         "TopologyDataCenter": {
             "edges": [
                 {
                     "node": {
                         "name": {"value": "DC-LAB"},
-                        "strategy": {"value": "ebgp-ibgp"},
+                        "strategy": {"value": strategy},
                         "devices": {
                             "edges": [
                                 {
@@ -118,7 +142,15 @@ def test_labnet_topology_emits_spines_leafs_and_links() -> None:
                                         "spine1",
                                         "spine",
                                         primary="10.255.0.1/32",
-                                        interfaces=[_cable_interface("Ethernet1", "leaf1", "Ethernet49")],
+                                        ospf=ospf,
+                                        interfaces=[
+                                            _cable_interface(
+                                                "Ethernet1",
+                                                "leaf1",
+                                                "Ethernet49",
+                                                ipv4="10.0.0.1/31" if ospf else None,
+                                            )
+                                        ],
                                     )
                                 },
                                 {
@@ -126,7 +158,15 @@ def test_labnet_topology_emits_spines_leafs_and_links() -> None:
                                         "leaf1",
                                         "leaf",
                                         primary="10.255.0.11/32",
-                                        interfaces=[_cable_interface("Ethernet49", "spine1", "Ethernet1")],
+                                        ospf=ospf,
+                                        interfaces=[
+                                            _cable_interface(
+                                                "Ethernet49",
+                                                "spine1",
+                                                "Ethernet1",
+                                                ipv4="10.0.0.0/31" if ospf else None,
+                                            )
+                                        ],
                                     )
                                 },
                                 {
@@ -134,6 +174,7 @@ def test_labnet_topology_emits_spines_leafs_and_links() -> None:
                                         "leaf2",
                                         "leaf",
                                         primary="10.255.0.12/32",
+                                        ospf=ospf,
                                         interfaces=[],
                                     )
                                 },
@@ -146,25 +187,51 @@ def test_labnet_topology_emits_spines_leafs_and_links() -> None:
         }
     }
 
+
+def test_labnet_topology_emits_spines_leafs_and_links() -> None:
+    """The transform names fabric devices and deduplicates bidirectional cables."""
     transform = LabnetTopology(client=MagicMock(), infrahub_node=MagicMock())
-    xp_text = asyncio.run(transform.transform(data))
-    document = yaml.safe_load(xp_text.split("---")[1])
-    topology = document["topology"]
+    topology = yaml.safe_load(asyncio.run(transform.transform(_dc_fixture("ebgp-ibgp"))).split("---")[1])["topology"]
 
     assert topology["name"] == "DC-LAB"
     assert topology["module"] == ["vlan", "vxlan", "bgp", "evpn"]
     assert set(topology["nodes"]) >= {"spine1", "leaf1", "leaf2"}
     assert "fw1" not in topology["nodes"]
-    assert topology["nodes"]["spine1"]["bgp"]["as"] == 65100
-    assert topology["nodes"]["leaf1"]["bgp"]["local_as"] == 65011
+    assert topology["nodes"]["spine1"]["bgp"]["as"] == 4200000222
+    assert topology["nodes"]["leaf1"]["bgp"]["local_as"] == 4200000333
     endpoints = {(link_if["node"], link_if["ifname"]) for link in topology["links"] for link_if in link["interfaces"]}
     assert ("spine1", "Ethernet1") in endpoints
     assert ("leaf1", "Ethernet49") in endpoints
-    # Synthetic clients always appear so the browser twin has a ping story.
-    assert {"h1", "h2"} <= set(topology["nodes"])
-    assert topology["vlans"]["demo"]["id"] == 100
-    assert topology["nodes"]["h1"]["validation"]["actions"][0]["target"] == "h2"
-    assert topology["validate"][-1]["packet"]["from"] == "h1"
+    # No invented demo VLAN/hosts when Infrahub has no segments.
+    assert "h1" not in topology["nodes"]
+    assert "vlans" not in topology or "demo" not in topology.get("vlans", {})
+
+
+def test_ospf_ibgp_uses_designed_ospf_and_interface_addresses() -> None:
+    """ospf-ibgp twins take OSPF and link IPs from Infrahub, not invented /30s."""
+    transform = LabnetTopology(client=MagicMock(), infrahub_node=MagicMock())
+    topology = yaml.safe_load(asyncio.run(transform.transform(_dc_fixture("ospf-ibgp"))).split("---")[1])["topology"]
+
+    assert topology["module"] == ["ospf", "bgp"]
+    assert topology["nodes"]["spine1"]["ospf"] == {"router_id": "10.255.0.1", "area": "0.0.0.0"}
+    assert topology["nodes"]["spine1"]["bgp"]["as"] == 4200000111
+    assert topology["nodes"]["leaf1"]["bgp"]["as"] == 4200000111
+    assert "local_as" not in topology["nodes"]["leaf1"]["bgp"]
+    fabric = topology["links"][0]
+    assert fabric["type"] == "p2p"
+    assert {endpoint["ipv4"] for endpoint in fabric["interfaces"]} == {"10.0.0.1/31", "10.0.0.0/31"}
+    assert "h1" not in topology["nodes"]
+
+
+def test_ospf_ibgp_rejects_fabric_links_without_designed_addresses() -> None:
+    """Do not invent underlay addressing when Infrahub left the link unnumbered."""
+    data = _dc_fixture("ospf-ibgp")
+    for device_edge in data["TopologyDataCenter"]["edges"][0]["node"]["devices"]["edges"]:
+        for interface_edge in device_edge["node"]["interfaces"]["edges"]:
+            interface_edge["node"]["ip_addresses"] = {"edges": []}
+    transform = LabnetTopology(client=MagicMock(), infrahub_node=MagicMock())
+    with pytest.raises(ValueError, match="missing interface addresses"):
+        asyncio.run(transform.transform(data))
 
 
 def _segment_interface(
@@ -179,6 +246,7 @@ def _segment_interface(
         "node": {
             "name": {"value": name},
             "role": {"value": "server"},
+            "ip_addresses": {"edges": []},
             "interface_services": {
                 "edges": [
                     {
@@ -196,8 +264,8 @@ def _segment_interface(
     }
 
 
-def test_labnet_prefers_segment_ports_for_demo_hosts() -> None:
-    """When leafs expose segments, hosts attach there on that VLAN."""
+def test_labnet_attaches_hosts_only_on_designed_segments() -> None:
+    """Twin probe hosts attach only to Infrahub segment ports and prefixes."""
     data = {
         "TopologyDataCenter": {
             "edges": [
@@ -293,4 +361,65 @@ def test_unsupported_platform_is_rejected(platform: str | None) -> None:
     }
     transform = LabnetTopology(client=MagicMock(), infrahub_node=MagicMock())
     with pytest.raises(ValueError, match="Unsupported lab.net platform.*router1"):
+        asyncio.run(transform.transform(data))
+
+
+@pytest.mark.parametrize("strategy", ["ospf-ibgp", "ebgp-ibgp"])
+def test_bgp_uses_designed_service_asns(strategy: str) -> None:
+    """Changing source AS allocations changes exported ASNs without inventing defaults."""
+    device = _device(
+        "spine1",
+        "spine",
+        primary="10.255.0.1/32",
+        ospf=strategy.startswith("ospf"),
+    )
+    for edge in device["device_services"]["edges"]:
+        service = edge["node"]
+        if service["__typename"] != "ServiceBGP":
+            continue
+        service["local_as"]["node"]["asn"]["value"] = 4212345678
+        service["remote_as"]["node"]["asn"]["value"] = (
+            4212345678 if service["session_type"]["value"] == "INTERNAL" else 4212345679
+        )
+    data = {
+        "TopologyDataCenter": {
+            "edges": [
+                {
+                    "node": {
+                        "strategy": {"value": strategy},
+                        "devices": {"edges": [{"node": device}]},
+                    }
+                }
+            ]
+        }
+    }
+    transform = LabnetTopology(client=MagicMock(), infrahub_node=MagicMock())
+    topology = yaml.safe_load(asyncio.run(transform.transform(data)).split("---")[1])["topology"]
+    assert topology["nodes"]["spine1"]["bgp"]["as"] == 4212345678
+    if strategy == "ospf-ibgp":
+        assert topology["module"] == ["ospf", "bgp"]
+        assert topology["nodes"]["spine1"]["ospf"]["router_id"] == "10.255.0.1"
+        assert "local_as" not in topology["nodes"]["spine1"]["bgp"]
+
+
+def test_missing_designed_asn_does_not_get_a_default() -> None:
+    """Fail explicitly instead of inventing a private ASN when services are missing."""
+    device = _device("spine1", "spine", primary="10.255.0.1/32", ospf=True)
+    device["device_services"] = {
+        "edges": [edge for edge in device["device_services"]["edges"] if edge["node"]["__typename"] == "ServiceOSPF"]
+    }
+    data = {
+        "TopologyDataCenter": {
+            "edges": [
+                {
+                    "node": {
+                        "strategy": {"value": "ospf-ibgp"},
+                        "devices": {"edges": [{"node": device}]},
+                    }
+                }
+            ]
+        }
+    }
+    transform = LabnetTopology(client=MagicMock(), infrahub_node=MagicMock())
+    with pytest.raises(ValueError, match="Expected one designed INTERNAL local ASN for spine1"):
         asyncio.run(transform.transform(data))

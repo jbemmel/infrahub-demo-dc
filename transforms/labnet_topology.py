@@ -1,4 +1,8 @@
-"""Transform a TopologyDataCenter into a lab.net .xp topology document."""
+"""Transform a TopologyDataCenter into a lab.net .xp topology document.
+
+All fabric addressing, ASNs, and OSPF parameters come from the Infrahub design
+(GraphQL). This transform does not invent underlay subnets or routing policy.
+"""
 
 from __future__ import annotations
 
@@ -18,14 +22,10 @@ PLATFORM_DEVICES = {
     "frr": "frr",
 }
 SKIP_INTERFACE_ROLES = frozenset({"console", "management"})
-SPINE_AS = 65100
-LEAF_OVERLAY_AS = 65000
-LEAF_LOCAL_AS_BASE = 65010
 VNI_OFFSET = 10000
-DEMO_VLAN = "demo"
-DEMO_VLAN_ID = 100
-DEMO_VLAN_PREFIX = "192.168.100.0/24"
-DEMO_HOST_IF = "Ethernet100"
+OSPF_IBGP_STRATEGIES = frozenset({"ospf-ibgp", "ospf"})
+EVPN_EBGP_STRATEGIES = frozenset({"ebgp-ibgp"})
+DEMO_STRATEGIES = OSPF_IBGP_STRATEGIES | EVPN_EBGP_STRATEGIES
 
 
 def _attr(node: dict[str, Any] | None, name: str) -> Any:
@@ -36,6 +36,74 @@ def _attr(node: dict[str, Any] | None, name: str) -> Any:
     if isinstance(field, dict) and "value" in field:
         return field.get("value")
     return None
+
+
+def _designed_asn(device: dict[str, Any], session_type: str) -> int:
+    """Read the local ASN from designed BGP services, rejecting missing or conflicting data."""
+    name = _attr(device, "name")
+    values: set[int] = set()
+    for edge in (device.get("device_services") or {}).get("edges") or []:
+        service = edge.get("node") or {}
+        if service.get("__typename") != "ServiceBGP" or _attr(service, "session_type") != session_type:
+            continue
+        value = _attr((service.get("local_as") or {}).get("node"), "asn")
+        remote = _attr((service.get("remote_as") or {}).get("node"), "asn")
+        if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= 4294967295:
+            raise ValueError(f"Invalid designed {session_type} local ASN for {name}: {value!r}")
+        if isinstance(remote, bool) or not isinstance(remote, int) or not 1 <= remote <= 4294967295:
+            raise ValueError(f"Invalid designed {session_type} remote ASN for {name}: {remote!r}")
+        if (value == remote) != (session_type == "INTERNAL"):
+            raise ValueError(f"Designed {session_type} AS mismatch for {name}: {value}/{remote}")
+        values.add(value)
+    if len(values) != 1:
+        raise ValueError(f"Expected one designed {session_type} local ASN for {name}, found {sorted(values)}")
+    return next(iter(values))
+
+
+def _designed_ospf(device: dict[str, Any]) -> dict[str, Any]:
+    """Return lab.net OSPF node config from designed ServiceOSPF objects."""
+    name = _attr(device, "name")
+    router_ids: set[str] = set()
+    areas: set[str] = set()
+    for edge in (device.get("device_services") or {}).get("edges") or []:
+        service = edge.get("node") or {}
+        if service.get("__typename") != "ServiceOSPF":
+            continue
+        router_id = _attr((service.get("router_id") or {}).get("node"), "address")
+        if isinstance(router_id, str) and router_id:
+            router_ids.add(router_id.split("/")[0])
+        area = _attr((service.get("area") or {}).get("node"), "area")
+        if isinstance(area, str) and area:
+            areas.add(area)
+    if len(router_ids) != 1:
+        raise ValueError(f"Expected one designed OSPF router-id for {name}, found {sorted(router_ids)}")
+    if len(areas) != 1:
+        raise ValueError(f"Expected one designed OSPF area for {name}, found {sorted(areas)}")
+    return {"router_id": next(iter(router_ids)), "area": next(iter(areas))}
+
+
+def _interface_ipv4(interface: dict[str, Any]) -> str | None:
+    """Return the first IPv4 CIDR on an interface, if designed."""
+    for edge in (interface.get("ip_addresses") or {}).get("edges") or []:
+        address = _attr(edge.get("node"), "address")
+        if isinstance(address, str) and address and "." in address.split("/")[0]:
+            return address
+    return None
+
+
+def _interface_index(devices: list[dict[str, Any]]) -> dict[tuple[str, str], dict[str, Any]]:
+    """Map ``(device_name, ifname)`` to the interface GraphQL node."""
+    index: dict[tuple[str, str], dict[str, Any]] = {}
+    for device in devices:
+        device_name = _attr(device, "name")
+        if not device_name:
+            continue
+        for interface_edge in device.get("interfaces", {}).get("edges") or []:
+            interface = interface_edge.get("node") or {}
+            ifname = _attr(interface, "name")
+            if ifname:
+                index[(device_name, ifname)] = interface
+    return index
 
 
 def _host_ip(prefix: str, host_index: int) -> str | None:
@@ -89,6 +157,7 @@ class LabnetTopology(InfrahubTransform):
                 fabric_devices.append(device)
 
         fabric_names = {_attr(device, "name") or "" for device in fabric_devices}
+        interfaces_by_key = _interface_index(fabric_devices)
 
         nodes: dict[str, Any] = {}
         links: list[dict[str, Any]] = []
@@ -99,7 +168,6 @@ class LabnetTopology(InfrahubTransform):
             (device for device in fabric_devices if _attr(device, "role") in {"leaf", "border_leaf"}),
             key=lambda device: _attr(device, "name") or "",
         )
-        leaf_index = {(_attr(device, "name") or ""): index + 1 for index, device in enumerate(leafs)}
 
         for device in fabric_devices:
             device_name = _attr(device, "name")
@@ -115,14 +183,18 @@ class LabnetTopology(InfrahubTransform):
             primary = _attr(primary_node, "address")
             loopback_ip = primary.split("/")[0] if isinstance(primary, str) and primary else None
 
-            if strategy == "ebgp-ibgp":
+            if strategy in OSPF_IBGP_STRATEGIES:
+                node["ospf"] = _designed_ospf(device)
+                if loopback_ip:
+                    node["loopback"] = {"ipv4": f"{loopback_ip}/32"}
+                node["bgp"] = {"as": _designed_asn(device, "INTERNAL")}
+            elif strategy in EVPN_EBGP_STRATEGIES:
                 if role == "spine":
-                    node["bgp"] = {"as": SPINE_AS}
+                    node["bgp"] = {"as": _designed_asn(device, "EXTERNAL")}
                 else:
-                    index = leaf_index.get(device_name, 1)
                     bgp: dict[str, Any] = {
-                        "as": LEAF_OVERLAY_AS,
-                        "local_as": LEAF_LOCAL_AS_BASE + index,
+                        "as": _designed_asn(device, "INTERNAL"),
+                        "local_as": _designed_asn(device, "EXTERNAL"),
                     }
                     if loopback_ip:
                         node["loopback"] = {"ipv4": f"{loopback_ip}/32"}
@@ -180,21 +252,31 @@ class LabnetTopology(InfrahubTransform):
                     if key in seen_links:
                         continue
                     seen_links.add(key)
-                    links.append(
-                        {
-                            "interfaces": [
-                                {"node": source_name, "ifname": source_if},
-                                {"node": remote_name, "ifname": remote_if},
-                            ]
-                        }
-                    )
+
+                    left_endpoint: dict[str, Any] = {"node": source_name, "ifname": source_if}
+                    right_endpoint: dict[str, Any] = {"node": remote_name, "ifname": remote_if}
+                    left_ip = _interface_ipv4(interface)
+                    right_ip = _interface_ipv4(interfaces_by_key.get((remote_name, remote_if), {}))
+                    if left_ip:
+                        left_endpoint["ipv4"] = left_ip
+                    if right_ip:
+                        right_endpoint["ipv4"] = right_ip
+                    if strategy in OSPF_IBGP_STRATEGIES and not (left_ip and right_ip):
+                        raise ValueError(
+                            f"Designed OSPF link {source_name}/{source_if}"
+                            f" ↔ {remote_name}/{remote_if} is missing interface addresses"
+                        )
+                    link: dict[str, Any] = {"interfaces": [left_endpoint, right_endpoint]}
+                    if strategy in OSPF_IBGP_STRATEGIES:
+                        link["type"] = "p2p"
+                    links.append(link)
 
         host_names: list[str] = []
-        if strategy == "ebgp-ibgp" and len(leafs) >= 1:
+        if strategy in DEMO_STRATEGIES and len(leafs) >= 1:
             used_ports = {
                 (endpoint["node"], endpoint["ifname"]) for link in links for endpoint in link.get("interfaces") or []
             }
-            host_names = _attach_demo_hosts(
+            host_names = _attach_segment_hosts(
                 leafs=leafs,
                 nodes=nodes,
                 links=links,
@@ -209,7 +291,21 @@ class LabnetTopology(InfrahubTransform):
             "nodes": nodes,
             "links": links,
         }
-        if strategy == "ebgp-ibgp":
+        spines = [device for device in fabric_devices if _attr(device, "role") == "spine"]
+        if strategy in OSPF_IBGP_STRATEGIES:
+            topology["module"] = ["ospf", "bgp"]
+            if vlans:
+                topology["module"] = ["ospf", "bgp", "vlan", "vxlan", "evpn"]
+                topology["vxlan"] = {"flooding": "evpn"}
+                topology["vlans"] = vlans
+            if len(host_names) >= 2:
+                topology["validate"] = _demo_validate_steps(
+                    host_names=host_names,
+                    leafs=leafs,
+                    spines=spines,
+                    ospf=True,
+                )
+        elif strategy in EVPN_EBGP_STRATEGIES:
             topology["module"] = ["vlan", "vxlan", "bgp", "evpn"]
             topology["vxlan"] = {"flooding": "evpn"}
             if vlans:
@@ -218,7 +314,7 @@ class LabnetTopology(InfrahubTransform):
                 topology["validate"] = _demo_validate_steps(
                     host_names=host_names,
                     leafs=leafs,
-                    spines=[device for device in fabric_devices if _attr(device, "role") == "spine"],
+                    spines=spines,
                 )
         elif strategy:
             topology["module"] = ["bgp"]
@@ -233,80 +329,7 @@ class LabnetTopology(InfrahubTransform):
         return f"---\n{yaml.safe_dump(document, sort_keys=False)}---\n"
 
 
-def _free_leaf_port(leaf: dict[str, Any], used_ports: set[tuple[str, str]]) -> str | None:
-    """Return an unused leaf interface name, inventing ``Ethernet100+`` if needed."""
-    leaf_name = _attr(leaf, "name")
-    if not leaf_name:
-        return None
-    for interface_edge in leaf.get("interfaces", {}).get("edges") or []:
-        interface = interface_edge.get("node") or {}
-        ifname = _attr(interface, "name")
-        if not ifname or _attr(interface, "role") in SKIP_INTERFACE_ROLES:
-            continue
-        if (leaf_name, ifname) in used_ports:
-            continue
-        cable = (interface.get("connector") or {}).get("node")
-        if cable is None or _segment_on_interface(interface) is not None:
-            return ifname
-    for interface_edge in leaf.get("interfaces", {}).get("edges") or []:
-        interface = interface_edge.get("node") or {}
-        ifname = _attr(interface, "name")
-        if ifname and _attr(interface, "role") not in SKIP_INTERFACE_ROLES and (leaf_name, ifname) not in used_ports:
-            return ifname
-    for index in range(100, 110):
-        ifname = f"Ethernet{index}"
-        if (leaf_name, ifname) not in used_ports:
-            return ifname
-    return None
-
-
-def _segment_attachment(
-    leaf: dict[str, Any],
-    used_ports: set[tuple[str, str]],
-) -> tuple[str, str, int, str] | None:
-    """Return ``(ifname, vlan_key, vlan_id, prefix)`` for a free segment-backed port."""
-    leaf_name = _attr(leaf, "name")
-    if not leaf_name:
-        return None
-    for interface_edge in leaf.get("interfaces", {}).get("edges") or []:
-        interface = interface_edge.get("node") or {}
-        ifname = _attr(interface, "name")
-        if not ifname or _attr(interface, "role") in SKIP_INTERFACE_ROLES:
-            continue
-        if (leaf_name, ifname) in used_ports:
-            continue
-        segment = _segment_on_interface(interface)
-        if segment is None:
-            continue
-        vlan_id = _attr(segment, "vlan_id")
-        if vlan_id is None:
-            continue
-        vlan_key = _attr(segment, "name") or f"vlan{vlan_id}"
-        prefix_node = (segment.get("prefix") or {}).get("node") or {}
-        prefix = _attr(prefix_node, "prefix") or DEMO_VLAN_PREFIX
-        return ifname, vlan_key, int(vlan_id), str(prefix)
-    return None
-
-
-def _ensure_vlan(
-    vlans: dict[str, Any],
-    vlan_key: str,
-    *,
-    vlan_id: int,
-    prefix: str,
-) -> None:
-    """Register a bridge VLAN/VNI once."""
-    if vlan_key in vlans:
-        return
-    vlans[vlan_key] = {
-        "id": vlan_id,
-        "mode": "bridge",
-        "vni": vlan_id + VNI_OFFSET,
-        "prefix": {"ipv4": prefix},
-    }
-
-
-def _attach_demo_hosts(
+def _attach_segment_hosts(
     *,
     leafs: list[dict[str, Any]],
     nodes: dict[str, Any],
@@ -314,54 +337,44 @@ def _attach_demo_hosts(
     vlans: dict[str, Any],
     used_ports: set[tuple[str, str]],
 ) -> list[str]:
-    """Attach two linux hosts on a shared VLAN (prefer distinct leafs).
+    """Attach twin probe hosts only on Infrahub-designed segment ports.
 
-    Prefers Infrahub segment attachments; otherwise synthesizes a ``demo`` VLAN
-    and free/invented leaf ports so the browser twin always has a ping story.
+    Hosts are not Infrahub objects; they are browser-twin probes attached to
+    designed VLANs/prefixes so ping and route tables are exercisable. Underlay
+    addressing and ASNs remain untouched.
     """
     host_names: list[str] = []
-    # One host on each of the first two leafs; duplicate the only leaf when alone.
-    targets = leafs[:2] if len(leafs) >= 2 else [leafs[0], leafs[0]]
-
+    targets = leafs[:2] if len(leafs) >= 2 else ([leafs[0], leafs[0]] if leafs else [])
     shared_vlan: str | None = None
     shared_prefix: str | None = None
+
     for leaf in targets:
         leaf_name = _attr(leaf, "name")
         if not leaf_name:
             continue
-
         attachment = _segment_attachment(leaf, used_ports)
-        ifname: str
-        vlan_key: str
-        prefix: str
-        if attachment is not None and shared_vlan is None:
-            ifname, vlan_key, vlan_id, prefix = attachment
-            _ensure_vlan(vlans, vlan_key, vlan_id=vlan_id, prefix=prefix)
-        else:
-            free_port = _free_leaf_port(leaf, used_ports)
-            if free_port is None:
-                continue
-            ifname = free_port
-            if shared_vlan is None:
-                vlan_key = DEMO_VLAN
-                prefix = DEMO_VLAN_PREFIX
-                _ensure_vlan(vlans, vlan_key, vlan_id=DEMO_VLAN_ID, prefix=prefix)
-            else:
-                vlan_key = shared_vlan
-                prefix = shared_prefix or DEMO_VLAN_PREFIX
-
+        if attachment is None:
+            continue
+        ifname, vlan_key, vlan_id, prefix = attachment
+        if vlan_key not in vlans:
+            vlans[vlan_key] = {
+                "id": vlan_id,
+                "mode": "bridge",
+                "vni": vlan_id + VNI_OFFSET,
+                "prefix": {"ipv4": prefix},
+            }
         if shared_vlan is None:
             shared_vlan = vlan_key
             shared_prefix = prefix
         else:
             vlan_key = shared_vlan
-            prefix = shared_prefix or DEMO_VLAN_PREFIX
+            prefix = shared_prefix or prefix
 
         host_name = f"h{len(host_names) + 1}"
         host_names.append(host_name)
         nodes[host_name] = {"device": "linux", "role": "host"}
-        host_ip = _host_ip(prefix, 9 + len(host_names))
         host_endpoint: dict[str, Any] = {"node": host_name, "ifname": "eth1"}
+        host_ip = _host_ip(prefix, 9 + len(host_names))
         if host_ip:
             host_endpoint["ipv4"] = host_ip
         links.append(
@@ -388,16 +401,62 @@ def _attach_demo_hosts(
     return host_names
 
 
+def _segment_attachment(
+    leaf: dict[str, Any],
+    used_ports: set[tuple[str, str]],
+) -> tuple[str, str, int, str] | None:
+    """Return ``(ifname, vlan_key, vlan_id, prefix)`` for a designed segment port."""
+    leaf_name = _attr(leaf, "name")
+    if not leaf_name:
+        return None
+    for interface_edge in leaf.get("interfaces", {}).get("edges") or []:
+        interface = interface_edge.get("node") or {}
+        ifname = _attr(interface, "name")
+        if not ifname or _attr(interface, "role") in SKIP_INTERFACE_ROLES:
+            continue
+        if (leaf_name, ifname) in used_ports:
+            continue
+        segment = _segment_on_interface(interface)
+        if segment is None:
+            continue
+        vlan_id = _attr(segment, "vlan_id")
+        prefix_node = (segment.get("prefix") or {}).get("node") or {}
+        prefix = _attr(prefix_node, "prefix")
+        if vlan_id is None or not prefix:
+            continue
+        vlan_key = _attr(segment, "name") or f"vlan{vlan_id}"
+        return ifname, vlan_key, int(vlan_id), str(prefix)
+    return None
+
+
 def _demo_validate_steps(
     *,
     host_names: list[str],
     leafs: list[dict[str, Any]],
     spines: list[dict[str, Any]],
+    ospf: bool = False,
 ) -> list[dict[str, Any]]:
-    """Build topology.validate steps: BGP up, then cross-host ICMP."""
+    """Build topology.validate steps: underlay/BGP up, then cross-host ICMP."""
     steps: list[dict[str, Any]] = []
     spine_name = _attr(spines[0], "name") if spines else None
     leaf_name = _attr(leafs[0], "name") if leafs else None
+    if spine_name and leaf_name and ospf:
+        steps.append(
+            {
+                "label": "OSPF reaches the spine loopback",
+                "state": [
+                    {
+                        "node": leaf_name,
+                        "routes": [
+                            {
+                                "prefix": f"{spine_name}.loopback",
+                                "protocol": "ospf",
+                            }
+                        ],
+                    }
+                ],
+            }
+        )
     if spine_name and leaf_name:
         steps.append(
             {
