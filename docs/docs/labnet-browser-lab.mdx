@@ -1,0 +1,85 @@
+---
+title: Open a browser twin with lab.net
+---
+
+This tutorial walks you through opening an interactive browser twin of a data center that Infrahub holds. Infrahub renders a lab.net topology artifact; the Service Catalog (or a exported `#lab=` link) opens it in lab.net without Docker or Containerlab.
+
+By the end of this tutorial, you will have launched the fabric in the browser, started the simulation, and inspected the twin of your Infrahub topology.
+
+## What you'll accomplish
+
+In this tutorial, you will:
+
+1. Use a data center that already has the `labnet-topology` artifact target (`topologies_clab`)
+2. Open **Simulate DC** in the Service Catalog (or export the `.xp` and build a `#lab=` URL)
+3. Run the browser twin at lab.net
+
+## Prerequisites
+
+Before starting this tutorial, ensure you have:
+
+- Completed the [installation guide](./install.mdx) and have Infrahub running
+- Completed the [user walkthrough](./user-walkthrough.mdx) (or [Containerlab deployment](./containerlab-deployment.mdx)) far enough to have an Arista data center on a branch or on `main`
+- The Service Catalog enabled (`INFRAHUB_SERVICE_CATALOG=true`), or CLI access to export artifacts
+
+:::info
+This path is the lightweight alternative to Containerlab. It does not run Arista cEOS; it simulates the fabric in the browser with lab.net.
+:::
+
+## Understanding the workflow
+
+```text
+Infrahub Data → Generator → labnet-topology artifact → gzip+base64 #lab= → lab.net
+```
+
+**Key components:**
+
+- **`labnet-topology` artifact** — `.xp` document listing spines, leafs, links, and EVPN defaults
+- **`LABNET_URL`** — where the Catalog opens the twin (default `https://exergy-connect.com/lab.net/`)
+- **lab.net** — loads the inline artefact from the URL fragment and runs the simulation in the page
+
+## Step 1: set the lab.net URL (optional)
+
+Production default:
+
+```bash
+export LABNET_URL=https://exergy-connect.com/lab.net/
+```
+
+For a local embed build:
+
+```bash
+export LABNET_URL=http://127.0.0.1:5500/dist/pages/embed.html
+```
+
+Add the same variable to `.env` if you use the Service Catalog container.
+
+## Step 2: open Simulate DC
+
+1. Open the Service Catalog at `http://localhost:8501`
+2. Go to **Visualizations → Simulate DC**
+3. Select the branch and data center
+4. Click **Generate & open lab**
+
+The page regenerates the `Lab.net Topology` artifact, embeds lab.net with `#lab=<gzip+base64>`, and offers a download of the raw `.xp`.
+
+## Step 3: run the twin
+
+1. In the lab.net frame (or the **Open in lab.net** tab), click **Start**
+2. Wait for BGP sessions to come up
+3. Use the topology view to select devices and inspect the twin
+
+## CLI alternative
+
+Export artifacts (including lab.net) from a branch:
+
+```bash
+uv run --env-file .env invoke labnet-export --branch main
+```
+
+Files land under `generated-configs/labnet/<topology>.xp`. You can open that file in the lab.net workbench, or gzip+base64-encode it into a `#lab=` fragment the same way the Catalog does.
+
+## Next steps
+
+- **[Deploy a virtual lab with Containerlab](./containerlab-deployment.mdx)** — near-production cEOS lab from the same designs
+- **[Service Catalog](./service-catalog.mdx)** — other catalog workflows

@@ -44,6 +44,7 @@ QUERY_SUBJECTS: dict[str, tuple[str, str, str | None]] = {
     "topology_dc": ("name", "TopologyDataCenter", None),
     "topology_simulator": ("name", "TopologyDataCenter", None),
     "topology_cabling": ("name", "TopologyDataCenter", None),
+    "topology_labnet": ("name", "TopologyDataCenter", None),
     "topology_pop": ("name", "TopologyColocationCenter", None),
     "equinix_pop_config": ("name", "TopologyColocationCenter", None),
     "segment": ("name", "ServiceNetworkSegment", None),

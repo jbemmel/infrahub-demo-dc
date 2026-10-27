@@ -30,6 +30,7 @@ service_catalog_pages = [
 
 visualization_pages = [
     st.Page("pages/3_Rack_Visualization.py", title="Rack Visualization", icon="🗄️"),
+    st.Page("pages/5_Simulate_DC.py", title="Simulate DC", icon="🧪"),
 ]
 
 # Create navigation with sections

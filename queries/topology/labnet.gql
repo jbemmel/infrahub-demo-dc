@@ -1,0 +1,102 @@
+query topology_labnet($name: String!) {
+  TopologyDataCenter(name__value: $name) {
+    edges {
+      node {
+        name {
+          value
+        }
+        strategy {
+          value
+        }
+        devices {
+          edges {
+            node {
+              name {
+                value
+              }
+              primary_address {
+                node {
+                  address {
+                    value
+                  }
+                }
+              }
+              ... on DcimDevice {
+                role {
+                  value
+                }
+              }
+              ... on DcimVirtualDevice {
+                role {
+                  value
+                }
+              }
+              interfaces {
+                edges {
+                  node {
+                    name {
+                      value
+                    }
+                    role {
+                      value
+                    }
+                    interface_services {
+                      edges {
+                        node {
+                          __typename
+                          ... on ServiceNetworkSegment {
+                            vlan_id {
+                              value
+                            }
+                            name {
+                              value
+                            }
+                            prefix {
+                              node {
+                                prefix {
+                                  value
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                    ... on InterfacePhysical {
+                      connector {
+                        node {
+                          connected_endpoints {
+                            edges {
+                              node {
+                                __typename
+                                ... on InterfacePhysical {
+                                  name {
+                                    value
+                                  }
+                                  role {
+                                    value
+                                  }
+                                  device {
+                                    node {
+                                      name {
+                                        value
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

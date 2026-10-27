@@ -6,4 +6,4 @@ spec:
   data:
     - name: demo-dc
       location: "/upstream"
-      default_branch: "main"
+      default_branch: "demo/labnet-browser-lab"

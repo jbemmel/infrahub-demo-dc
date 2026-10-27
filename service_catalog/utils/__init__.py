@@ -9,6 +9,7 @@ from .config import (
     INFRAHUB_ADDRESS,
     INFRAHUB_API_TOKEN,
     INFRAHUB_UI_URL,
+    LABNET_URL,
     STREAMLIT_PORT,
 )
 from .ui import (
@@ -31,6 +32,7 @@ __all__ = [
     "INFRAHUB_ADDRESS",
     "INFRAHUB_API_TOKEN",
     "INFRAHUB_UI_URL",
+    "LABNET_URL",
     "STREAMLIT_PORT",
     "DEFAULT_BRANCH",
     "GENERATOR_WAIT_TIME",

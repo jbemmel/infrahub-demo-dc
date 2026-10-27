@@ -119,6 +119,13 @@ artifact_definitions:
     transformation: topology_cabling
     parameters:
       name: name__value
+  - name: Lab.net Topology
+    artifact_name: labnet-topology
+    content_type: text/plain
+    targets: topologies_clab
+    transformation: labnet_topology
+    parameters:
+      name: name__value
   # Equinix POP
   - name: equinix_pop_config
     artifact_name: equinix_pop
@@ -234,6 +241,9 @@ python_transforms:
   - name: topology_cabling
     class_name: TopologyCabling
     file_path: transforms/topology_cabling.py
+  - name: labnet_topology
+    class_name: LabnetTopology
+    file_path: transforms/labnet_topology.py
   - name: leaf
     class_name: Leaf
     file_path: transforms/leaf.py
@@ -374,6 +384,8 @@ queries:
     file_path: queries/topology/clab.gql
   - name: topology_cabling
     file_path: queries/topology/cabling.gql
+  - name: topology_labnet
+    file_path: queries/topology/labnet.gql
   - name: leaf_config
     file_path: queries/config/leaf.gql
   - name: openconfig_leaf_config

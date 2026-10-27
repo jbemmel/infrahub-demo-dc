@@ -16,6 +16,7 @@ const sidebars: SidebarsConfig = {
       items: [
         'user-walkthrough',
         'containerlab-deployment',
+        'labnet-browser-lab',
         'security-management',
         'virtualization',
         'cloud-management',

@@ -1,0 +1,16 @@
+{
+  "venvPath": ".",
+  "venv": ".venv",
+  "pythonVersion": "3.12",
+  "extraPaths": ["service_catalog"],
+  "include": [
+    "scripts",
+    "transforms",
+    "generators",
+    "checks",
+    "tasks.py",
+    "tests",
+    "service_catalog"
+  ]
+}
+

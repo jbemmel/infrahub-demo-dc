@@ -125,6 +125,7 @@ GENERATOR_DEFINITIONS = [
 TRANSFORM_DEFINITIONS = [
     "rack_elevation",
     "topology_cabling",
+    "labnet_topology",
     "leaf",
     "openconfig_leaf",
     "spine",

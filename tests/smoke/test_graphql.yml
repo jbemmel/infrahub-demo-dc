@@ -43,6 +43,14 @@ infrahub_tests:
           kind: graphql-query-smoke
 
   - resource: GraphQLQuery
+    resource_name: topology_labnet
+    tests:
+      - name: syntax_check
+        spec:
+          path: queries/topology/labnet.gql
+          kind: graphql-query-smoke
+
+  - resource: GraphQLQuery
     resource_name: equinix_pop_config
     tests:
       - name: syntax_check
