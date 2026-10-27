@@ -72,6 +72,11 @@ cp .env.example .env
 
 Then edit the `.env` file or export the variables directly in your shell.
 
+`uv run` does not automatically load `.env`. To pass its settings to Invoke and
+Infrahub CLI commands, use `uv run --env-file .env`, as in the bootstrap command
+below. Without an exported `INFRAHUB_API_TOKEN`, schema loading fails with
+`Authentication is required`.
+
 ### Core Infrahub variables
 
 These variables configure connectivity to the Infrahub API:
@@ -273,7 +278,7 @@ Now that Infrahub is running, load the demo schemas and data. You can use the au
 Run the bootstrap command to load everything in one step:
 
 ```bash
-uv run invoke bootstrap
+uv run --env-file .env invoke bootstrap
 ```
 
 This command performs all the steps in the Manual tab automatically.

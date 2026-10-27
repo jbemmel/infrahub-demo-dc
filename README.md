@@ -21,6 +21,37 @@ This repository is demoing the key Infrahub features for an example data center 
 
 Documentation for loading and using this demo is available on the Infrahub docs site [docs.infrahub.app/demo-dc/](https://docs.infrahub.app/demo-dc)
 
+Copy `.env.example` to `.env` if you have not already done so, and configure your
+Infrahub address and API token. Load that file explicitly when bootstrapping:
+
+```bash
+uv run --env-file .env invoke bootstrap
+```
+
+`uv run invoke bootstrap` does not automatically load `.env`. Without an exported
+`INFRAHUB_API_TOKEN`, schema loading fails with `Authentication is required`.
+Use `uv run --env-file .env` for other demo commands that need these settings too.
+
+This demo requires Infrahub 1.11 or later for generator `watch` declarations.
+An existing, Git-ignored `docker-compose.yml` takes precedence over the downloaded
+stack and is not refreshed by pulling this repository or resetting the demo.
+If repository sync reports `error-import` with `generator_definitions.*.watch`
+validation errors, refresh the local stack definition before initializing again:
+
+```bash
+curl -fsSL https://infrahub.opsmill.io/1.11.5 -o docker-compose.yml
+uv run --env-file .env invoke init
+```
+
+`invoke init` destroys the demo's existing containers and volumes, including its data.
+
+If bootstrap skips optional event actions because the `create_dc` generator is not
+available yet, wait for the repository to finish syncing in Infrahub, then retry:
+
+```bash
+uv run --env-file .env infrahubctl object load objects/events/ --branch main
+```
+
 ## Service Catalog
 
 This repository includes an optional Streamlit-based Service Catalog that provides a user-friendly web interface for viewing and creating data center infrastructure in Infrahub.
@@ -37,7 +68,7 @@ This repository includes an optional Streamlit-based Service Catalog that provid
 To start Infrahub with the Service Catalog enabled, set `INFRAHUB_SERVICE_CATALOG=true` in `.env`, then run:
 
 ```bash
-uv run invoke start
+uv run --env-file .env invoke start
 ```
 
 The Service Catalog will be accessible at `http://localhost:8501`. It runs the published image `registry.opsmill.io/opsmill/infrahub-demo-dc-streamlit`, so there is nothing to build. To build it from this checkout instead, run `uv run invoke start --rebuild`.

@@ -5,5 +5,5 @@ spec:
   kind: CoreReadOnlyRepository
   data:
     - name: demo-dc
-      location: "https://github.com/opsmill/infrahub-demo-dc.git"
-      ref: "main"
+      location: "https://github.com/jbemmel/infrahub-demo-dc.git"
+      ref: "demo/labnet-browser-lab"
