@@ -9,7 +9,7 @@ from __future__ import annotations
 import base64
 import gzip
 from typing import Any
-from urllib.parse import urlencode, urlparse, urlunparse
+from urllib.parse import urlencode, urljoin, urlparse, urlunparse
 
 import streamlit as st  # type: ignore[import-untyped]
 import streamlit.components.v1 as components  # type: ignore[import-untyped]
@@ -31,12 +31,13 @@ if "selected_branch" not in st.session_state:
     st.session_state.selected_branch = DEFAULT_BRANCH
 
 
-def labnet_url_for_artifact(topology_xp: str, labnet_url: str = LABNET_URL) -> str:
+def labnet_url_for_artifact(topology_xp: str, labnet_url: str = LABNET_URL, *, embed: bool = False) -> str:
     """Build a lab.net URL that loads ``topology_xp`` as a gzip+base64 ``#lab=`` artefact.
 
     Args:
         topology_xp: Raw ``.xp`` document from the Infrahub artifact.
         labnet_url: Workbench or embed base URL.
+        embed: Select the embedded viewer instead of the full workbench.
 
     Returns:
         Absolute URL with a ``#lab=<artefact>`` fragment.
@@ -44,6 +45,7 @@ def labnet_url_for_artifact(topology_xp: str, labnet_url: str = LABNET_URL) -> s
     parsed = urlparse(labnet_url)
     base = urlunparse(parsed._replace(fragment="", query=""))
     artefact = base64.b64encode(gzip.compress(topology_xp.encode("utf-8"))).decode("ascii")
+    base = urljoin(base, "embed.html" if embed else "index.html")
     return f"{base}#{urlencode({'lab': artefact})}"
 
 
@@ -134,12 +136,12 @@ def main() -> None:
                 st.stop()
 
         st.session_state["labnet_xp"] = xp_text
-        st.session_state["labnet_url"] = labnet_url_for_artifact(xp_text)
         st.session_state["labnet_dc_name"] = dc_name
 
     if "labnet_xp" in st.session_state and st.session_state.get("labnet_dc_name") == dc_name:
-        lab_url = st.session_state["labnet_url"]
         xp_text = st.session_state["labnet_xp"]
+        lab_url = labnet_url_for_artifact(xp_text)
+        embed_url = labnet_url_for_artifact(xp_text, embed=True)
 
         st.success(f"Browser twin ready for **{dc_name}**.")
         st.link_button("Open in lab.net", lab_url)
@@ -149,7 +151,7 @@ def main() -> None:
             file_name=f"{dc_name}.xp",
             mime="text/plain",
         )
-        components.iframe(lab_url, height=720, scrolling=True)
+        components.iframe(embed_url, height=720, scrolling=True)
     elif not run:
         st.info("Select a data center and click **Generate & open lab**.")
 
