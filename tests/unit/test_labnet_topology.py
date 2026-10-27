@@ -223,15 +223,18 @@ def test_ospf_ibgp_uses_designed_ospf_and_interface_addresses() -> None:
     assert "h1" not in topology["nodes"]
 
 
-def test_ospf_ibgp_rejects_fabric_links_without_designed_addresses() -> None:
+def test_ospf_ibgp_preserves_unnumbered_fabric_links() -> None:
     """Do not invent underlay addressing when Infrahub left the link unnumbered."""
     data = _dc_fixture("ospf-ibgp")
     for device_edge in data["TopologyDataCenter"]["edges"][0]["node"]["devices"]["edges"]:
         for interface_edge in device_edge["node"]["interfaces"]["edges"]:
             interface_edge["node"]["ip_addresses"] = {"edges": []}
     transform = LabnetTopology(client=MagicMock(), infrahub_node=MagicMock())
-    with pytest.raises(ValueError, match="missing interface addresses"):
-        asyncio.run(transform.transform(data))
+    topology = yaml.safe_load(asyncio.run(transform.transform(data)).split("---")[1])["topology"]
+    link = topology["links"][0]
+    assert link["unnumbered"] is True
+    assert "prefix" not in link
+    assert all("ipv4" not in endpoint and "ipv6" not in endpoint for endpoint in link["interfaces"])
 
 
 def _segment_interface(
@@ -264,7 +267,8 @@ def _segment_interface(
     }
 
 
-def test_labnet_attaches_hosts_only_on_designed_segments() -> None:
+@pytest.mark.parametrize("vlan_name", ["opsmill", "dc-arista - OpsMill - production - Hypervisor-Management"])
+def test_labnet_attaches_hosts_only_on_designed_segments(vlan_name: str) -> None:
     """Twin probe hosts attach only to Infrahub segment ports and prefixes."""
     data = {
         "TopologyDataCenter": {
@@ -290,7 +294,7 @@ def test_labnet_attaches_hosts_only_on_designed_segments() -> None:
                                         primary="10.255.0.11/32",
                                         interfaces=[
                                             _cable_interface("Ethernet49", "spine1", "Ethernet1"),
-                                            _segment_interface("Ethernet10"),
+                                            _segment_interface("Ethernet10", vlan_name=vlan_name),
                                         ],
                                     )
                                 },
@@ -299,7 +303,7 @@ def test_labnet_attaches_hosts_only_on_designed_segments() -> None:
                                         "leaf2",
                                         "leaf",
                                         primary="10.255.0.12/32",
-                                        interfaces=[_segment_interface("Ethernet10")],
+                                        interfaces=[_segment_interface("Ethernet10", vlan_name=vlan_name)],
                                     )
                                 },
                             ]
@@ -311,9 +315,9 @@ def test_labnet_attaches_hosts_only_on_designed_segments() -> None:
     }
     transform = LabnetTopology(client=MagicMock(), infrahub_node=MagicMock())
     topology = yaml.safe_load(asyncio.run(transform.transform(data)).split("---")[1])["topology"]
-    assert topology["vlans"]["opsmill"]["id"] == 500
+    assert topology["vlans"][vlan_name.replace(" ", "_")]["id"] == 500
     assert "demo" not in topology["vlans"]
-    host_links = [link for link in topology["links"] if link.get("vlan.access") == "opsmill"]
+    host_links = [link for link in topology["links"] if link.get("vlan.access") == vlan_name.replace(" ", "_")]
     assert len(host_links) == 2
     assert host_links[0]["interfaces"][0]["ipv4"] == "10.10.50.10/24"
 
@@ -423,3 +427,28 @@ def test_missing_designed_asn_does_not_get_a_default() -> None:
     transform = LabnetTopology(client=MagicMock(), infrahub_node=MagicMock())
     with pytest.raises(ValueError, match="Expected one designed INTERNAL local ASN for spine1"):
         asyncio.run(transform.transform(data))
+
+
+@pytest.mark.parametrize("role", ["leaf_spine", "unnumbered"])
+def test_fabric_links_preserve_ipv6_addresses(role: str) -> None:
+    """Preserve IPv6-only links and explicit unnumbered roles without inventing IPv4."""
+    data = _dc_fixture("ospf-ibgp")
+    devices = data["TopologyDataCenter"]["edges"][0]["node"]["devices"]["edges"]
+    for index, edge in enumerate(devices):
+        for interface_edge in edge["node"]["interfaces"]["edges"]:
+            interface = interface_edge["node"]
+            interface["role"] = {"value": role}
+            interface["ip_addresses"] = {
+                "edges": [
+                    {
+                        "node": {
+                            "address": {"value": f"2001:db8::{index + 1}/64"},
+                        }
+                    }
+                ]
+            }
+    transform = LabnetTopology(client=MagicMock(), infrahub_node=MagicMock())
+    topology = yaml.safe_load(asyncio.run(transform.transform(data)).split("---")[1])["topology"]
+    link = topology["links"][0]
+    assert all("ipv6" in endpoint and "ipv4" not in endpoint for endpoint in link["interfaces"])
+    assert link.get("unnumbered", False) is (role == "unnumbered")

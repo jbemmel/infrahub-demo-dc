@@ -219,7 +219,7 @@ class LabnetTopology(InfrahubTransform):
                 if segment is not None:
                     vlan_id = _attr(segment, "vlan_id")
                     if vlan_id is not None:
-                        vlan_key = _attr(segment, "name") or f"vlan{vlan_id}"
+                        vlan_key = (_attr(segment, "name") or f"vlan{vlan_id}").replace(" ", "_")
                         if vlan_key not in vlans:
                             vlan_entry: dict[str, Any] = {
                                 "id": int(vlan_id),
@@ -257,18 +257,23 @@ class LabnetTopology(InfrahubTransform):
 
                     left_endpoint: dict[str, Any] = {"node": source_name, "ifname": source_if}
                     right_endpoint: dict[str, Any] = {"node": remote_name, "ifname": remote_if}
-                    left_ip = _interface_ipv4(interface)
-                    right_ip = _interface_ipv4(interfaces_by_key.get((remote_name, remote_if), {}))
-                    if left_ip:
-                        left_endpoint["ipv4"] = left_ip
-                    if right_ip:
-                        right_endpoint["ipv4"] = right_ip
-                    if strategy in OSPF_IBGP_STRATEGIES and not (left_ip and right_ip):
-                        raise ValueError(
-                            f"Designed OSPF link {source_name}/{source_if}"
-                            f" ↔ {remote_name}/{remote_if} is missing interface addresses"
-                        )
+                    remote_interface = interfaces_by_key.get((remote_name, remote_if), {})
+                    for source, target in [(interface, left_endpoint), (remote_interface, right_endpoint)]:
+                        for address_edge in (source.get("ip_addresses") or {}).get("edges") or []:
+                            address = _attr(address_edge.get("node"), "address")
+                            if isinstance(address, str) and address:
+                                family = "ipv6" if ":" in address else "ipv4"
+                                target.setdefault(family, address)
                     link: dict[str, Any] = {"interfaces": [left_endpoint, right_endpoint]}
+                    if (
+                        _attr(interface, "role") == "unnumbered"
+                        or _attr(remote_interface, "role") == "unnumbered"
+                        or any(
+                            not (endpoint.get("ipv4") or endpoint.get("ipv6"))
+                            for endpoint in [left_endpoint, right_endpoint]
+                        )
+                    ):
+                        link["unnumbered"] = True
                     if strategy in OSPF_IBGP_STRATEGIES:
                         link["type"] = "p2p"
                     links.append(link)
@@ -426,7 +431,7 @@ def _segment_attachment(
         prefix = _attr(prefix_node, "prefix")
         if vlan_id is None or not prefix:
             continue
-        vlan_key = _attr(segment, "name") or f"vlan{vlan_id}"
+        vlan_key = (_attr(segment, "name") or f"vlan{vlan_id}").replace(" ", "_")
         return ifname, vlan_key, int(vlan_id), str(prefix)
     return None
 
