@@ -186,11 +186,11 @@ async def get_topology_cabling(client: InfrahubClient) -> int:
 
 
 async def get_labnet_topologies(client: InfrahubClient) -> list[str]:
-    """Fetch lab.net browser-twin topology artifacts and save to files."""
+    """Fetch Exergy-lab.net browser-twin topology artifacts and save to files."""
     directory_path = Path("./generated-configs/labnet")
     directory_path.mkdir(parents=True, exist_ok=True)
 
-    console.print("\n[cyan]→[/cyan] Fetching lab.net topologies...")
+    console.print("\n[cyan]→[/cyan] Fetching Exergy-lab.net topologies...")
 
     topologies = await client.all(kind="TopologyDataCenter")
 
@@ -205,13 +205,15 @@ async def get_labnet_topologies(client: InfrahubClient) -> list[str]:
             output_file = directory_path / f"{topology.name.value}.xp"
             with open(output_file, "w", encoding="utf-8") as file:
                 file.write(str(artifact_content))
-            console.print(f"  [green]✓[/green] Saved lab.net topology: [bold]{output_file}[/bold]")
+            console.print(f"  [green]✓[/green] Saved Exergy-lab.net topology: [bold]{output_file}[/bold]")
             saved.append(topology.name.value)
         except Exception as e:
-            console.print(f"  [red]✗[/red] Error fetching lab.net topology {topology.name.value}: [dim]{e}[/dim]")
+            console.print(
+                f"  [red]✗[/red] Error fetching Exergy-lab.net topology {topology.name.value}: [dim]{e}[/dim]"
+            )
 
     if not saved:
-        console.print("  [yellow]No lab.net topologies found[/yellow]")
+        console.print("  [yellow]No Exergy-lab.net topologies found[/yellow]")
 
     return saved
 
@@ -276,7 +278,7 @@ async def main(branch: str | None = None) -> int:
             "[bold green]Configuration extraction complete![/bold green]\n\n"
             f"[dim]Retrieved:[/dim]\n"
             f"  • [cyan]{topology_count}[/cyan] containerlab topolog{'y' if topology_count == 1 else 'ies'}\n"
-            f"  • [cyan]{labnet_count}[/cyan] lab.net topolog{'y' if labnet_count == 1 else 'ies'}\n"
+            f"  • [cyan]{labnet_count}[/cyan] Exergy-lab.net topolog{'y' if labnet_count == 1 else 'ies'}\n"
             f"  • [cyan]{config_count}[/cyan] device configuration{'s' if config_count != 1 else ''}\n"
             f"  • [cyan]{cabling_count}[/cyan] cabling matri{'x' if cabling_count == 1 else 'ces'}\n\n"
             f"[dim]Saved to:[/dim] [bold]./generated-configs/[/bold]",

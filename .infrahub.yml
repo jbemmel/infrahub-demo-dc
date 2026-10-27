@@ -119,7 +119,7 @@ artifact_definitions:
     transformation: topology_cabling
     parameters:
       name: name__value
-  - name: Lab.net Topology
+  - name: Exergy-lab.net Topology
     artifact_name: labnet-topology
     content_type: text/plain
     targets: topologies_clab

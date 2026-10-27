@@ -131,20 +131,22 @@ async def test_containerlab_topology_artifact(async_client_main: InfrahubClient)
 
 
 async def test_labnet_topology_artifact(async_client_main: InfrahubClient) -> None:
-    """The lab.net topology artifact names the fabric's devices.
+    """The Exergy-lab.net topology artifact names the fabric's devices.
 
     This is the artifact the Service Catalog Simulate DC page and ``invoke labnet-export`` consume.
     """
     client = async_client_main
-    rendered = await _generate_and_read(client, "Lab.net Topology")
+    rendered = await _generate_and_read(client, "Exergy-lab.net Topology")
 
     devices = await client.filters(kind="DcimDevice", topology__name__value=TOPOLOGY, branch="main")
     fabric_names = [device.name.value for device in devices if device.role.value in ("spine", "leaf", "border_leaf")]
-    assert fabric_names, f"No fabric devices in {TOPOLOGY} on main to look for in the lab.net topology."
+    assert fabric_names, f"No fabric devices in {TOPOLOGY} on main to look for in the Exergy-lab.net topology."
 
     combined = "\n".join(content for _, content in rendered)
     missing = [name for name in fabric_names if name not in combined]
-    assert not missing, f"lab.net topology artifact does not mention {len(missing)} fabric device(s): {sorted(missing)}"
+    assert not missing, (
+        f"Exergy-lab.net topology artifact does not mention {len(missing)} fabric device(s): {sorted(missing)}"
+    )
     assert "module:" in combined or "module :" in combined
 
 

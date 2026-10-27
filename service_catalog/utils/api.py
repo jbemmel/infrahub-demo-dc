@@ -1683,7 +1683,10 @@ class InfrahubClient:
         accept_unchanged_at = time.time() + self.ARTIFACT_SETTLE_AFTER
         reposted = False
         while time.time() < deadline:
-            by_definition = {a["definition_name"]: a for a in self._fetch_ready_artifacts(vm_id, branch)}
+            by_definition = {
+                a["definition_name"]: a
+                for a in self._fetch_ready_artifacts(vm_id, branch, fail_on_errors=definition_names)
+            }
             if set(definition_names) <= set(by_definition):
                 wanted = [by_definition[name] for name in definition_names]
                 regenerated = all(a["storage_id"] != baseline.get(a["definition_name"]) for a in wanted)
@@ -1696,15 +1699,21 @@ class InfrahubClient:
             time.sleep(2)
         raise InfrahubAPIError(f"Artifact regen did not converge for {definition_names} within {timeout}s")
 
-    def _fetch_ready_artifacts(self, vm_id: str, branch: str) -> List[Dict[str, Any]]:
+    def _fetch_ready_artifacts(
+        self, vm_id: str, branch: str, *, fail_on_errors: Optional[List[str]] = None
+    ) -> List[Dict[str, Any]]:
         """Read the VM's artifacts that are Ready and have a body in the store.
 
         Args:
             vm_id: VM node ID the artifacts target
             branch: Branch to read
+            fail_on_errors: Definition names whose Error status should stop the wait.
 
         Returns:
             List of dicts with id, name, definition_name, content_type, storage_id
+
+        Raises:
+            InfrahubAPIError: A requested artifact has failed generation.
         """
         art_query = """
         query VmArtifacts($ids: [ID!]) {
@@ -1723,6 +1732,16 @@ class InfrahubClient:
         }
         """
         result = self.execute_graphql(art_query, variables={"ids": [vm_id]}, branch=branch)
+        for edge in result.get("CoreArtifact", {}).get("edges", []):
+            node = edge["node"]
+            definition = (node.get("definition") or {}).get("node") or {}
+            name = (definition.get("name") or {}).get("value")
+            if name in (fail_on_errors or []) and (node.get("status") or {}).get("value") == "Error":
+                raise InfrahubAPIError(
+                    f"Artifact generation failed for {name} on branch {branch}. "
+                    "Infrahub marked the artifact Error. See the artifact generation task "
+                    "in Infrahub for the transform error; waiting will not resolve it."
+                )
         return [
             {
                 "id": e["node"]["id"],

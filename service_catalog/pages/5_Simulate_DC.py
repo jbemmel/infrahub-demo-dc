@@ -1,7 +1,7 @@
-"""Simulate a data center fabric in lab.net (browser twin).
+"""Simulate a data center fabric in Exergy-lab.net (browser twin).
 
 Fetches the ``labnet-topology`` artifact from Infrahub, encodes it as a
-gzip+base64 fragment, and opens the configured lab.net URL.
+gzip+base64 fragment, and opens the configured Exergy-lab.net URL.
 """
 
 from __future__ import annotations
@@ -15,24 +15,24 @@ import streamlit as st  # type: ignore[import-untyped]
 import streamlit.components.v1 as components  # type: ignore[import-untyped]
 from utils import (
     DEFAULT_BRANCH,
+    EXERGY_LAB_NET_URL,
     INFRAHUB_ADDRESS,
     INFRAHUB_API_TOKEN,
     INFRAHUB_UI_URL,
-    LABNET_URL,
     InfrahubClient,
     display_error,
 )
 from utils.api import InfrahubAPIError
 
-LABNET_ARTIFACT_DEFINITION = "Lab.net Topology"
+LABNET_ARTIFACT_DEFINITION = "Exergy-lab.net Topology"
 LABNET_ARTIFACT_NAME = "labnet-topology"
 
 if "selected_branch" not in st.session_state:
     st.session_state.selected_branch = DEFAULT_BRANCH
 
 
-def labnet_url_for_artifact(topology_xp: str, labnet_url: str = LABNET_URL, *, embed: bool = False) -> str:
-    """Build a lab.net URL that loads ``topology_xp`` as a gzip+base64 ``#lab=`` artefact.
+def labnet_url_for_artifact(topology_xp: str, labnet_url: str = EXERGY_LAB_NET_URL, *, embed: bool = False) -> str:
+    """Build an Exergy-lab.net URL that loads ``topology_xp`` as a gzip+base64 ``#lab=`` artefact.
 
     Args:
         topology_xp: Raw ``.xp`` document from the Infrahub artifact.
@@ -60,8 +60,8 @@ def main() -> None:
     """Render the Simulate DC page."""
     st.title("Simulate DC")
     st.caption(
-        "Open a browser twin of an Infrahub data center in lab.net. "
-        f"Default host: `{LABNET_URL}`. Override with `LABNET_URL` "
+        "Open a browser twin of an Infrahub data center in Exergy-lab.net. "
+        f"Default host: `{EXERGY_LAB_NET_URL}`. Override with `EXERGY_LAB_NET_URL` "
         "(local embed: `http://127.0.0.1:5500/dist/pages/embed.html`)."
     )
 
@@ -114,12 +114,27 @@ def main() -> None:
     run = st.button("Generate & open lab", type="primary")
 
     if run:
-        with st.status("Preparing lab.net topology…", expanded=True) as status:
+        with st.status("Preparing Exergy-lab.net topology…", expanded=True) as status:
             try:
                 st.write(f"Generating `{LABNET_ARTIFACT_DEFINITION}`…")
+                definitions = client.execute_graphql(
+                    """query LabnetArtifactDefinition($artifact_name: String!) {
+                        CoreArtifactDefinition(artifact_name__value: $artifact_name) {
+                            edges { node { name { value } } }
+                        }
+                    }""",
+                    variables={"artifact_name": LABNET_ARTIFACT_NAME},
+                    branch=branch,
+                )
+                matches = definitions.get("CoreArtifactDefinition", {}).get("edges", [])
+                if len(matches) != 1:
+                    raise InfrahubAPIError(
+                        f"Expected one definition for {LABNET_ARTIFACT_NAME} on {branch}; found {len(matches)}."
+                    )
+                definition_name = matches[0]["node"]["name"]["value"]
                 artifacts = client.generate_and_wait_for_artifacts(
                     dc_id,
-                    [LABNET_ARTIFACT_DEFINITION],
+                    [definition_name],
                     branch,
                     timeout=180,
                 )
@@ -144,7 +159,7 @@ def main() -> None:
         embed_url = labnet_url_for_artifact(xp_text, embed=True)
 
         st.success(f"Browser twin ready for **{dc_name}**.")
-        st.link_button("Open in lab.net", lab_url)
+        st.link_button("Open in Exergy-lab.net", lab_url)
         st.download_button(
             "Download .xp",
             data=xp_text,

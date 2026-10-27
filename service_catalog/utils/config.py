@@ -13,7 +13,7 @@ GENERATOR_WAIT_TIME: Final[int] = int(os.getenv("GENERATOR_WAIT_TIME", "60"))
 API_TIMEOUT: Final[int] = int(os.getenv("API_TIMEOUT", "30"))
 API_RETRY_COUNT: Final[int] = int(os.getenv("API_RETRY_COUNT", "3"))
 # Browser twin workbench / embed base URL (fragment #lab=… is appended)
-LABNET_URL: Final[str] = os.getenv("LABNET_URL", "https://exergy-connect.com/lab.net/")
+EXERGY_LAB_NET_URL: Final[str] = os.getenv("EXERGY_LAB_NET_URL", "https://exergy-connect.com/exergy-lab.net/")
 
 
 def validate_config() -> None:

@@ -387,18 +387,18 @@ def demo_vpn_opsmill(context: Context, branch: str = "add-vpn-opsmill") -> None:
 
 @task(optional=["branch"])
 def labnet_export(context: Context, branch: str = "main") -> None:
-    """Export lab.net browser-twin topology artifacts to generated-configs/labnet/."""
+    """Export Exergy-lab.net browser-twin topology artifacts to generated-configs/labnet/."""
     console.print()
     console.print(
         Panel(
-            f"[bold magenta]lab.net Export[/bold magenta]\n[dim]Branch:[/dim] {branch}",
+            f"[bold magenta]Exergy-lab.net Export[/bold magenta]\n[dim]Branch:[/dim] {branch}",
             border_style="magenta",
             box=box.SIMPLE,
         )
     )
     context.run(f"uv run scripts/get_configs.py --branch {branch}", pty=True)
     console.print(
-        "\n[green]✓[/green] lab.net topologies written under "
+        "\n[green]✓[/green] Exergy-lab.net topologies written under "
         "[bold]generated-configs/labnet/[/bold] when the artifact is present"
     )
     console.print()

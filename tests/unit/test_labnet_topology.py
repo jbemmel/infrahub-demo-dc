@@ -1,4 +1,4 @@
-"""Unit tests for the lab.net topology transform."""
+"""Unit tests for the Exergy-lab.net topology transform."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from transforms.labnet_topology import LabnetTopology
 
 @pytest.mark.parametrize("role", ["spine", "leaf", "border_leaf"])
 def test_fabric_roles_export_as_labnet_routers(role: str) -> None:
-    """Export every fabric role using the router role accepted by lab.net YANG."""
+    """Export every fabric role using the router role accepted by Exergy-lab.net YANG."""
     data = {
         "TopologyDataCenter": {
             "edges": [
@@ -323,7 +323,7 @@ def test_labnet_attaches_hosts_only_on_designed_segments() -> None:
     [("eos", "eos"), ("nxos", "nxos"), ("iosxr", "ios-xr"), ("junos", "junos")],
 )
 def test_source_platform_is_preserved(platform: str, expected: str) -> None:
-    """Select the native lab.net device flavor from the device's platform."""
+    """Select the native Exergy-lab.net device flavor from the device's platform."""
     device = _device("router1", "spine")
     device["platform"]["node"]["nornir_platform"]["value"] = platform
     data = {
@@ -360,7 +360,7 @@ def test_unsupported_platform_is_rejected(platform: str | None) -> None:
         }
     }
     transform = LabnetTopology(client=MagicMock(), infrahub_node=MagicMock())
-    with pytest.raises(ValueError, match="Unsupported lab.net platform.*router1"):
+    with pytest.raises(ValueError, match="Unsupported Exergy-lab.net platform.*router1"):
         asyncio.run(transform.transform(data))
 
 

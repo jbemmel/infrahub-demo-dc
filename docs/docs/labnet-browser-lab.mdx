@@ -1,8 +1,8 @@
 ---
-title: Open a browser twin with lab.net
+title: Open a browser twin with Exergy-lab.net
 ---
 
-This tutorial walks you through opening an interactive browser twin of a data center that Infrahub holds. Infrahub renders a lab.net topology artifact; the Service Catalog (or a exported `#lab=` link) opens it in lab.net without Docker or Containerlab.
+This tutorial walks you through opening an interactive browser twin of a data center that Infrahub holds. Infrahub renders an Exergy-lab.net topology artifact; the Service Catalog (or a exported `#lab=` link) opens it in Exergy-lab.net without Docker or Containerlab.
 
 By the end of this tutorial, you will have launched the fabric in the browser, started the simulation, and inspected the twin of your Infrahub topology.
 
@@ -12,7 +12,7 @@ In this tutorial, you will:
 
 1. Use a data center that already has the `labnet-topology` artifact target (`topologies_clab`)
 2. Open **Simulate DC** in the Service Catalog (or export the `.xp` and build a `#lab=` URL)
-3. Run the browser twin at lab.net
+3. Run the browser twin at Exergy-lab.net
 
 ## Prerequisites
 
@@ -23,33 +23,33 @@ Before starting this tutorial, ensure you have:
 - The Service Catalog enabled (`INFRAHUB_SERVICE_CATALOG=true`), or CLI access to export artifacts
 
 :::info
-This path is the lightweight alternative to Containerlab. It does not run Arista cEOS; it simulates the fabric in the browser with lab.net.
+This path is the lightweight alternative to Containerlab. It does not run Arista cEOS; it simulates the fabric in the browser with Exergy-lab.net.
 :::
 
 ## Understanding the workflow
 
 ```text
-Infrahub Data → Generator → labnet-topology artifact → gzip+base64 #lab= → lab.net
+Infrahub Data → Generator → labnet-topology artifact → gzip+base64 #lab= → Exergy-lab.net
 ```
 
 **Key components:**
 
 - **`labnet-topology` artifact** — `.xp` document listing spines, leafs, links, and EVPN defaults
-- **`LABNET_URL`** — where the Catalog opens the twin (default `https://exergy-connect.com/lab.net/`)
-- **lab.net** — loads the inline artefact from the URL fragment and runs the simulation in the page
+- **`EXERGY_LAB_NET_URL`** — where the Catalog opens the twin (default `https://exergy-connect.com/exergy-lab.net/`)
+- **Exergy-lab.net** — loads the inline artefact from the URL fragment and runs the simulation in the page
 
-## Step 1: set the lab.net URL (optional)
+## Step 1: set the Exergy-lab.net URL (optional)
 
 Production default:
 
 ```bash
-export LABNET_URL=https://exergy-connect.com/lab.net/
+export EXERGY_LAB_NET_URL=https://exergy-connect.com/exergy-lab.net/
 ```
 
 For a local embed build:
 
 ```bash
-export LABNET_URL=http://127.0.0.1:5500/dist/pages/embed.html
+export EXERGY_LAB_NET_URL=http://127.0.0.1:5500/dist/pages/embed.html
 ```
 
 Add the same variable to `.env` if you use the Service Catalog container.
@@ -61,23 +61,23 @@ Add the same variable to `.env` if you use the Service Catalog container.
 3. Select the branch and data center
 4. Click **Generate & open lab**
 
-The page regenerates the `Lab.net Topology` artifact, embeds lab.net with `#lab=<gzip+base64>`, and offers a download of the raw `.xp`.
+The page regenerates the `Exergy-lab.net Topology` artifact, embeds Exergy-lab.net with `#lab=<gzip+base64>`, and offers a download of the raw `.xp`.
 
 ## Step 3: run the twin
 
-1. In the lab.net frame (or the **Open in lab.net** tab), click **Start**
+1. In the Exergy-lab.net frame (or the **Open in Exergy-lab.net** tab), click **Start**
 2. Wait for BGP sessions to come up
 3. Use the topology view to select devices and inspect the twin
 
 ## CLI alternative
 
-Export artifacts (including lab.net) from a branch:
+Export artifacts (including Exergy-lab.net) from a branch:
 
 ```bash
 uv run --env-file .env invoke labnet-export --branch main
 ```
 
-Files land under `generated-configs/labnet/<topology>.xp`. You can open that file in the lab.net workbench, or gzip+base64-encode it into a `#lab=` fragment the same way the Catalog does.
+Files land under `generated-configs/labnet/<topology>.xp`. You can open that file in the Exergy-lab.net workbench, or gzip+base64-encode it into a `#lab=` fragment the same way the Catalog does.
 
 ## Next steps
 

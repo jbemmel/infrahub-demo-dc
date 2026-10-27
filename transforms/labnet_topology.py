@@ -1,4 +1,4 @@
-"""Transform a TopologyDataCenter into a lab.net .xp topology document.
+"""Transform a TopologyDataCenter into an Exergy-lab.net .xp topology document.
 
 All fabric addressing, ASNs, and OSPF parameters come from the Infrahub design
 (GraphQL). This transform does not invent underlay subnets or routing policy.
@@ -61,7 +61,7 @@ def _designed_asn(device: dict[str, Any], session_type: str) -> int:
 
 
 def _designed_ospf(device: dict[str, Any]) -> dict[str, Any]:
-    """Return lab.net OSPF node config from designed ServiceOSPF objects."""
+    """Return Exergy-lab.net OSPF node config from designed ServiceOSPF objects."""
     name = _attr(device, "name")
     router_ids: set[str] = set()
     areas: set[str] = set()
@@ -73,6 +73,8 @@ def _designed_ospf(device: dict[str, Any]) -> dict[str, Any]:
         if isinstance(router_id, str) and router_id:
             router_ids.add(router_id.split("/")[0])
         area = _attr((service.get("area") or {}).get("node"), "area")
+        if isinstance(area, int) and not isinstance(area, bool):
+            area = str(area)
         if isinstance(area, str) and area:
             areas.add(area)
     if len(router_ids) != 1:
@@ -129,12 +131,12 @@ def _segment_on_interface(interface: dict[str, Any]) -> dict[str, Any] | None:
 
 
 class LabnetTopology(InfrahubTransform):
-    """Render a lab.net browser-twin topology from a data center deployment."""
+    """Render an Exergy-lab.net browser-twin topology from a data center deployment."""
 
     query = "topology_labnet"
 
     async def transform(self, data: dict[str, Any]) -> str:
-        """Build an ``.xp`` document for lab.net from TopologyDataCenter GraphQL data.
+        """Build an ``.xp`` document for Exergy-lab.net from TopologyDataCenter GraphQL data.
 
         Args:
             data: GraphQL result for ``topology_labnet``.
@@ -144,7 +146,7 @@ class LabnetTopology(InfrahubTransform):
         """
         edges = data.get("TopologyDataCenter", {}).get("edges") or []
         if not edges:
-            raise ValueError("TopologyDataCenter not found for lab.net transform")
+            raise ValueError("TopologyDataCenter not found for Exergy-lab.net transform")
 
         dc = edges[0]["node"]
         name = _attr(dc, "name") or "topology"
@@ -174,10 +176,10 @@ class LabnetTopology(InfrahubTransform):
             if not device_name:
                 continue
             role = _attr(device, "role")
-            # lab.net YANG only allows router|host|switch|bridge (not fabric roles).
+            # Exergy-lab.net YANG only allows router|host|switch|bridge (not fabric roles).
             platform = _attr((device.get("platform") or {}).get("node"), "nornir_platform")
             if platform not in PLATFORM_DEVICES:
-                raise ValueError(f"Unsupported lab.net platform {platform!r} for {device_name}")
+                raise ValueError(f"Unsupported Exergy-lab.net platform {platform!r} for {device_name}")
             node: dict[str, Any] = {"device": PLATFORM_DEVICES[platform], "role": "router"}
             primary_node = (device.get("primary_address") or {}).get("node") or {}
             primary = _attr(primary_node, "address")
@@ -322,7 +324,7 @@ class LabnetTopology(InfrahubTransform):
         document = {
             "id": name,
             "title": f"Browser twin: {name}",
-            "summary": f"lab.net twin of Infrahub topology {name}",
+            "summary": f"Exergy-lab.net twin of Infrahub topology {name}",
             "_id": name,
             "topology": topology,
         }
