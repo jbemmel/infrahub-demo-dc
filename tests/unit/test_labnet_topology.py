@@ -5,9 +5,31 @@ from __future__ import annotations
 import asyncio
 from unittest.mock import MagicMock
 
+import pytest
 import yaml
 
 from transforms.labnet_topology import LabnetTopology
+
+
+@pytest.mark.parametrize("role", ["spine", "leaf", "border_leaf"])
+def test_fabric_roles_export_as_labnet_routers(role: str) -> None:
+    """Export every fabric role using the router role accepted by lab.net YANG."""
+    data = {
+        "TopologyDataCenter": {
+            "edges": [
+                {
+                    "node": {
+                        "name": {"value": "DC-LAB"},
+                        "devices": {"edges": [{"node": _device("router1", role)}]},
+                    }
+                }
+            ]
+        }
+    }
+    transform = LabnetTopology(client=MagicMock(), infrahub_node=MagicMock())
+    document = yaml.safe_load(asyncio.run(transform.transform(data)).split("---")[1])
+
+    assert document["topology"]["nodes"]["router1"]["role"] == "router"
 
 
 def _device(

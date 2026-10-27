@@ -93,7 +93,8 @@ class LabnetTopology(InfrahubTransform):
             if not device_name:
                 continue
             role = _attr(device, "role")
-            node: dict[str, Any] = {"device": "frr", "role": role}
+            # lab.net YANG only allows router|host|switch|bridge (not fabric roles).
+            node: dict[str, Any] = {"device": "frr", "role": "router"}
             primary_node = (device.get("primary_address") or {}).get("node") or {}
             primary = _attr(primary_node, "address")
             loopback_ip = primary.split("/")[0] if isinstance(primary, str) and primary else None
